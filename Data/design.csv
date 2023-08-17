@@ -1,0 +1,21 @@
+sample,description,label,knockdown,time,nascent,replicate
+D356T1,siCtrl_0h_R1,control 0.0h (1),FALSE,0,FALSE,1
+D356T2,siCtrl_0h_R2,control 0.0h (2),FALSE,0,FALSE,2
+D356T3,siCtrl_2h_R1,control 2.0h (1),FALSE,2,FALSE,1
+D356T4,siCtrl_2h_R2,control 2.0h (2),FALSE,2,FALSE,2
+D356T5,siCtrl_5h_R1,control 5.0h (1),FALSE,5,FALSE,1
+D356T6,siCtrl_5h_R2,control 5.0h (2),FALSE,5,FALSE,2
+D356T7,siAsf1_0h_R1,siASF1 0.0h (1),TRUE,0,FALSE,1
+D356T8,siAsf1_0h_R2,siASF1 0.0h (2),TRUE,0,FALSE,2
+D356T9,siAsf1_2h_R1,siASF1 2.0h (1),TRUE,2,FALSE,1
+D356T10,siAsf1_2h_R1,siASF1 2.0h (2),TRUE,2,FALSE,1
+D356T11,siAsf1_5h_R1,siASF1 5.0h (1),TRUE,5,FALSE,1
+D356T12,siAsf1_5h_R2,siASF1 5.0h (2),TRUE,5,FALSE,2
+D356T13,siCtrl_asyn_total_RNA_R1,control (1),FALSE,,FALSE,1
+D356T14,siCtrl_asyn_total_RNA_R2,control (2),FALSE,,FALSE,2
+D356T15,siAsf1_asyn_total_RNA_R1,siASF1 (1),TRUE,,FALSE,1
+D356T16,siAsf1_asyn_total_RNA_R2,siASF1 (2),TRUE,,FALSE,2
+D356T17,siCtrl_asyn_nascent_RNA_R1,control nascent (1),FALSE,,TRUE,1
+D356T18,siAsf1_asyn_nascent_RNA_R1,siASF1 nascent (1),TRUE,,TRUE,1
+D356T19,siCtrl_asyn_nascent_RNA_R2,control nascent (2),FALSE,,TRUE,2
+D356T20,siAsf1_asyn_nascent_RNA_R2,siASF1 nascent (2),TRUE,,TRUE,2
