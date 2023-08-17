@@ -20,6 +20,10 @@ Requirements:
 - featureCounts
 - GRCh38.104 homo sapiens transcriptome index, build with hisat2 using genome sequence and transcriptome annotations from EnsEMBL.
 
+`env_bin.sh` define path to useful executables
+
+<br/><br/>
+
 
 ## Differential Gene Expression analysis
 
@@ -72,5 +76,11 @@ Requirements:
 > 
 > `Scripts/replHist_polyA_analysis.r` yield the level of poly-adenylated transcripts for the set of replicative histones and build the panel in Fig4b right. This work uses the output of `replHist_polyA_analysis.py`.  
 
+<br/><br/>
+
+
+## Statistical analyses of RT-qPCR results
+
+`Scripts/RT-qPCR_statistical_tests.r` and `Scripts/RT-qPCR_statistical_tests_oriented.r` compute the statistical test for every condition from every RT-qPCR experiment compared to an estimated reference distribution, or between conditions. The two scripts respectively perform "two.sided" comparisons and considering "lower than" or "greater than" comparison according to the needs in the study.
 
 <!--  -->
