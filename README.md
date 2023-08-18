@@ -27,6 +27,11 @@ Requirements:
 
 ## Differential Gene Expression analysis
 
+> ### Expression of histone, replicative and variant, genes
+> 
+> `Scripts/expression_analysis.r` build the heatmap of expression relative to mean level in siCtrl samples, in SuppFig2g and SuppFig3.
+
+
 > ### Evaluate differentially expressed genes (DEGs)
 > 
 > `Scripts/dge_analysis_0.2.py` perform differential expression analysis and find the DEGs.
@@ -34,17 +39,17 @@ Requirements:
 
 > ### Volcano plot of genes in asynchronous cells
 > 
-> `Scripts/Volcano_plot.r` build the volcano plot of Fig2a.
+> `Scripts/Volcano_plot.r` build the volcano plot of Fig2a and SuppFig2b.
 
 
 > ### Heatmap of DEGs
 > 
-> `Scripts/Heatmaps.py` build the heatmaps for Fig2b, Fig2c, Fig3b, Fig3c. Gene order is set by hierarchical clustering performed on gene expression in synchronized cell lines.
+> `Scripts/Heatmaps.py` build the heatmaps for Fig2b, Fig2c, Fig3b, Fig3c, SuppFig2a and SuppFig2e. Gene order is set by hierarchical clustering performed on gene expression in synchronized cell lines.
 
 
 > ### clustering of DEGs in synchronized cells
 > 
-> `Scripts/hclust_analysis_0.2_less_clusters.py` extracts the six clusters and build the boxplot panel shown in Fig2d and Fig3a. It is as an extension of [Heatmap of differentially expressed genes](#Heatmap-of-differentially-expressed-genes) section.
+> `Scripts/hclust_analysis_0.2_less_clusters.py` extracts the six clusters shown in Fig2b and Fig3b, and build the boxplot panels shown in Fig2d and Fig3a. It is as an extension of [Heatmap of differentially expressed genes](#Heatmap-of-differentially-expressed-genes) section.
 
 
 > ### classification of genes based on gene expression
@@ -63,9 +68,9 @@ Requirements:
 
 > ### Evaluate the level of transcripts which are not cleaved in 3' of the SL
 > 
-> `Scripts/analysis_of_clived-unclived_replicative_histone_mRNA_Retriever.sh` count the number of transcript fragments cover a 49nt region that end at the HDE of each replicative histone gene.  
+> `Scripts/analysis_of_clived-unclived_replicative_histone_mRNA_Retriever.sh` count the number of transcript fragments that cover a 49nt region which end at the HDE of each replicative histone gene.  
 > 
-> `Scripts/analysis_of_clived-unclived_replicative_histone_mRNA_Retriever.r` normalize the counts and build plots for Fig4b left. DESeq2 data were generated with `Scripts/DEG_analysis_ASF1only.r`
+> `Scripts/analysis_of_clived-unclived_replicative_histone_mRNA_Retriever.r` normalize the counts and build plots for Fig4b left and SuppFig4a. DESeq2 data were generated with `Scripts/expression_analysis.r`
 
 
 > ### Evaluate level of poly-adenylated transcripts
@@ -74,13 +79,14 @@ Requirements:
 > 
 > `Scripts/replHist_polyA_analysis.sh` orchestrate this counting on every sample and for several annotation sets.
 > 
-> `Scripts/replHist_polyA_analysis.r` yield the level of poly-adenylated transcripts for the set of replicative histones and build the panel in Fig4b right. This work uses the output of `replHist_polyA_analysis.py`.  
+> `Scripts/replHist_polyA_analysis.r` yield the level of poly-adenylated transcripts for the set of replicative histones and build the panel in Fig4b right and SuppFig4b. This work uses the output of `replHist_polyA_analysis.py`.  
 
 <br/><br/>
 
 
 ## Statistical analyses of RT-qPCR results
 
-`Scripts/RT-qPCR_statistical_tests.r` and `Scripts/RT-qPCR_statistical_tests_oriented.r` compute the statistical test for every condition from every RT-qPCR experiment compared to an estimated reference distribution, or between conditions. The two scripts respectively perform "two.sided" comparisons and considering "lower than" or "greater than" comparison according to the needs in the study.
+`Scripts/RT-qPCR_statistical_tests.r` and `Scripts/RT-qPCR_statistical_tests_oriented.r` compute the statistical test for every condition from every RT-qPCR experiment compared to an estimated reference distribution, or between conditions. The two scripts respectively perform "two.sided" comparisons and considering "lower than" or "greater than" comparison according to the needs in the study; in Fig1e and Fig4c.
+
 
 <!--  -->
