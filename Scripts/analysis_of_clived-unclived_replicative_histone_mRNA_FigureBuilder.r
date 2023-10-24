@@ -45,6 +45,30 @@ if (TRUE) {
     }
     ####
 
+    ## Document duplicated replicative histones
+    {
+        dup.l <- list(
+            c('H4C14', 'H4C15'), # c('HIST2H4A', 'HIST2H4B'),
+            c('H3C14', 'H3C15'), # c('HIST2H3C', 'HIST2H3A'),
+            c('H2AC18', 'H2AC19') # c('HIST2H2AA3', 'HIST2H2AA4')
+        )
+
+        dup.ll <- lapply(dup.l, function(xxx) {xxx[1]})
+        names(dup.ll) <- lapply(dup.l, function(xxx) {xxx[2]})
+
+        dupi.l <- lapply(dup.l, function(xxx) {
+            left_join(
+                data.frame('gene_name'=xxx),
+                as.data.frame(mcols(genes))[c('gene_id', 'gene_name')],
+                by='gene_name'
+            )$gene_id
+        })
+
+        dupi.ll <- lapply(dupi.l, function(xxx) {xxx[1]})
+        names(dupi.ll) <- lapply(dupi.l, function(xxx) {xxx[2]})
+    }
+
+
     spl_idx_vec <- c(
         "1" = "siCtrl_0h_1",
         "2" = "siCtrl_0h_2",
@@ -104,6 +128,28 @@ if (TRUE) {
 
     treat_colpal <- c('siCtrl' = '#3174a1', 'siAsf1' = '#c03d3e')
     sufSplTypel <- list('asyn' = 'asynchroCells', 'synchro' = 'acrossSphase', 'nasc' = 'inNascentRNA')
+
+
+    ## Load the clusters by Alberto
+    albcl.p <- './Data/ASF1_chaperone/Alberto_Gatto_results/results/clusters_6/gene_clusters_sync.tsv'
+    albcl.t <- read.table(albcl.p, h=T, sep='\t')
+    colnames(albcl.t)[1] <- 'gene_id'
+    # head(albcl.t)
+
+    ## combine the duplicated replicative histone genes in the clustering
+    for (dgi in 1:length(dupi.l)) {
+        # dgi <- 2
+        dgp <- dupi.l[[dgi]]
+        
+        salbcl.t <- albcl.t[albcl.t$gene_id %in% dgp,]
+        # print(stab)
+
+        if (2 %in% salbcl.t$cluster) {
+            albcl.t$cluster[albcl.t$gene_id %in% dgp] <- 2
+            albcl.t <- albcl.t[!(albcl.t$gene_id %in% dgp[2]),]
+            # str(albcl.t)
+        }
+    }
 }
 
 
@@ -128,6 +174,32 @@ gdata <- gdata[1:ncol(gdata) - 1]
 for (name in names(ctab)) {
     gdata[[strsplit(name, '\\.')[[1]][1]]] <- ctab[[name]][[7]]
 }
+
+## combine the duplicated replicative histone genes
+for (dgi in 1:length(dupi.l)) {
+    # dgi <- 1
+    dgp <- dup.l[[dgi]]
+    
+    sgdata <- gdata[gdata$repl_histone %in% dgp,]
+    # print(stab)
+
+    sel_col <- !grepl('^(ref|pos_0.based|end|trash|repl_histone|strand)', colnames(sgdata))
+    sgdata[1, sel_col] <- sgdata[1, sel_col] + sgdata[2, sel_col]
+
+    gdata[gdata$repl_histone %in% dgp[1], sel_col] <- sgdata[1, sel_col]
+    gdata <- gdata[!(gdata$repl_histone %in% dgp[2]),]
+}
+
+
+## restrict to the group 2 of Alberto's clustering
+repl_histone_id <- left_join(
+    data.frame('gene_name' = gdata$repl_histone),
+    as.data.frame(mcols(genes))[c('gene_name', 'gene_id')],
+    by = 'gene_name'
+)$gene_id
+
+gdata <- gdata[repl_histone_id %in% albcl.t$gene_id[albcl.t$cluster == 2],]
+
 
 ## normalize the counts by clivage window length
 gdata_lenNorm <- gdata
@@ -163,11 +235,29 @@ if (TRUE) {
         by = 'gene_id'
     )[['gene_name']]
 
-
     for (name in names(rtab)) {
         spl_name <- strsplit(strsplit(name, '\\.')[[1]][1], '_')[[1]][4]
         rcdata[[spl_name]] <- rtab[[name]][[7]]
     }
+
+    ## combine the duplicated replicative histone genes
+    for (dgi in 1:length(dupi.l)) {
+        # dgi <- 1
+        dgp <- dup.l[[dgi]]
+        
+        srcdata <- rcdata[rcdata$repl_histone %in% dgp,]
+        # print(stab)
+
+        sel_col <- !grepl('^(Geneid|Chr|Start|End|Strand|Length|repl_histone)', colnames(srcdata))
+        srcdata[1, sel_col] <- srcdata[1, sel_col] + srcdata[2, sel_col]
+
+        rcdata[rcdata$repl_histone %in% dgp[1], sel_col] <- srcdata[1, sel_col]
+        rcdata <- rcdata[!(rcdata$repl_histone %in% dgp[2]),]
+    }
+
+    ## restrict to the group 2 of Alberto's clustering
+    rcdata <- rcdata[repl_histone_id %in% albcl.t$gene_id[albcl.t$cluster == 2],]
+
 
     ## give same order of replicative histone than for unprocessed transcript table
     rcdata <- left_join(
@@ -175,6 +265,7 @@ if (TRUE) {
         rcdata,
         by = 'repl_histone'
     )
+    rcdata <- rcdata[!is.na(rcdata$Geneid),]
     rcdata <- rcdata[colnames(rcdata)[c(2:7, 1, 8:ncol(rcdata))]]
 
     ## look for the distribution of the repl. histone for their gene expression
@@ -238,7 +329,6 @@ if (TRUE) {
             print(fig)
             bouh <- dev.off()
         }
-
     }
 
     ## normalize the counts by annotation length
@@ -246,6 +336,12 @@ if (TRUE) {
     for (coln in colnames(rcdata_lenNorm)[grepl('^D356T', colnames(rcdata_lenNorm))]) {
         rcdata_lenNorm[[coln]] <- rcdata_lenNorm[[coln]] / rcdata_lenNorm$Length
     }
+}
+
+## adjust the gene lists between the two measures
+{
+    gdata_lenNorm <- gdata_lenNorm[gdata_lenNorm$repl_histone %in% rcdata_lenNorm$repl_histone,]
+    rcdata_lenNorm <- rcdata_lenNorm[rcdata_lenNorm$repl_histone %in% gdata_lenNorm$repl_histone,]
 }
 
 ## determine replicative histone genes with enough reads
@@ -289,30 +385,41 @@ if (TRUE) {
         bouh <- dev.off()
     }
 
-    ## load DESeq2 results (for getting normalization factors)
-    if (TRUE) {
-        cat.desq.path <- './Results/ASF1_chaperone/DESeq2_results/CtrlVsSiASF1_while_AsyncVsSphase_effect_DESeq2Results.RDS'
-        cat.dds <- readRDS(cat.desq.path)
-        cat.dds.ld <- tibble(as.data.frame(cat.dds@colData@listData))
+    # ## load DESeq2 results (for getting normalization factors)
+    # if (TRUE) {
+    #     cat.desq.path <- './Results/ASF1_chaperone/DESeq2_results/CtrlVsSiASF1_while_AsyncVsSphase_effect_DESeq2Results.RDS'
+    #     cat.dds <- readRDS(cat.desq.path)
+    #     cat.dds.ld <- tibble(as.data.frame(cat.dds@colData@listData))
 
-        nas.desq.path <- './Results/ASF1_chaperone/DESeq2_results/CtrlVsSiASF1_inNascentRNAs_DESeq2Results.RDS'
-        nas.dds <- readRDS(nas.desq.path)
-        nas.dds.ld <- tibble(as.data.frame(nas.dds@colData@listData))
+    #     nas.desq.path <- './Results/ASF1_chaperone/DESeq2_results/CtrlVsSiASF1_inNascentRNAs_DESeq2Results.RDS'
+    #     nas.dds <- readRDS(nas.desq.path)
+    #     nas.dds.ld <- tibble(as.data.frame(nas.dds@colData@listData))
+    # }
+
+    ## load spike-in x sequencing depth normalization factors
+    if (TRUE) {
+        spi.seqdep.nf.t <- read.table(file.path('./Results/ASF1_chaperone', 'spike_and_seqDepth_norm_factor.tsv'), h=T, sep='\t')
+        spi.seqdep.nf <- as.vector(spi.seqdep.nf.t$norm_factor)
+        names(spi.seqdep.nf) <- spi.seqdep.nf.t$sample
     }
-    
+
     ## normalize expression by DESeq2 normalization factors
     if (TRUE) {
         ngdata_lenNorm <- gdata_lenNorm
         nrcdata_lenNorm <- rcdata_lenNorm
 
         for (coln in cat.dds.ld$sample) {
-            ngdata_lenNorm[[coln]] <- ngdata_lenNorm[[coln]] / cat.dds.ld$sizeFactor[cat.dds.ld$sample == coln]
-            nrcdata_lenNorm[[coln]] <- nrcdata_lenNorm[[coln]] / cat.dds.ld$sizeFactor[cat.dds.ld$sample == coln]
+            # ngdata_lenNorm[[coln]] <- ngdata_lenNorm[[coln]] / cat.dds.ld$sizeFactor[cat.dds.ld$sample == coln]
+            # nrcdata_lenNorm[[coln]] <- nrcdata_lenNorm[[coln]] / cat.dds.ld$sizeFactor[cat.dds.ld$sample == coln]
+            ngdata_lenNorm[[coln]] <- ngdata_lenNorm[[coln]] * spi.seqdep.nf[coln] # / cat.dds.ld$sizeFactor[cat.dds.ld$sample == coln]
+            nrcdata_lenNorm[[coln]] <- nrcdata_lenNorm[[coln]] * spi.seqdep.nf[coln] # / cat.dds.ld$sizeFactor[cat.dds.ld$sample == coln]
         }
 
         for (coln in nas.dds.ld$sample) {
-            ngdata_lenNorm[[coln]] <- ngdata_lenNorm[[coln]] / nas.dds.ld$sizeFactor[nas.dds.ld$sample == coln]
-            nrcdata_lenNorm[[coln]] <- nrcdata_lenNorm[[coln]] / nas.dds.ld$sizeFactor[nas.dds.ld$sample == coln]
+            # ngdata_lenNorm[[coln]] <- ngdata_lenNorm[[coln]] / nas.dds.ld$sizeFactor[nas.dds.ld$sample == coln]
+            # nrcdata_lenNorm[[coln]] <- nrcdata_lenNorm[[coln]] / nas.dds.ld$sizeFactor[nas.dds.ld$sample == coln]
+            ngdata_lenNorm[[coln]] <- ngdata_lenNorm[[coln]] * spi.seqdep.nf[coln] # / nas.dds.ld$sizeFactor[nas.dds.ld$sample == coln]
+            nrcdata_lenNorm[[coln]] <- nrcdata_lenNorm[[coln]] * spi.seqdep.nf[coln] # / nas.dds.ld$sizeFactor[nas.dds.ld$sample == coln]
         }
 
         ngdata_lenNorm <- ngdata_lenNorm[c(5, 7:ncol(ngdata_lenNorm))]
@@ -362,7 +469,7 @@ if (TRUE) {
 
     figdata <- figdata[!grepl('T(17|18|19|20)$', figdata$sample),]
     figdata$expression[figdata$expression == 0] <- 0.5
-    figdata <- pivot_wider(figdata, c('repl_histone', 'sample'), names_from = val_type, values_from = expression)
+    figdata <- pivot_wider(figdata, id_cols=c('repl_histone', 'sample'), names_from = 'val_type', values_from = 'expression')
     # figdata[(is.na(figdata$whole_gene)),]
 
     figdata <- left_join(
@@ -594,6 +701,7 @@ if (TRUE) {
             ## the mean values for each boxplot (~condition)
             if (TRUE) {
                 meanvals <- tapply(figdata$rel_unpr, figdata$condition, mean)
+                print(meanvals)
                 meanvals[startsWith(names(meanvals), 'siAsf1')] / meanvals[startsWith(names(meanvals), 'siCtrl')]
                 meanvals[grepl('_2h', names(meanvals))] / meanvals[grepl('_0h', names(meanvals))]
                 meanvals[grepl('_5h', names(meanvals))] / meanvals[grepl('_2h', names(meanvals))]

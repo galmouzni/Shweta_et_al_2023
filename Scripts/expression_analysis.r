@@ -27,6 +27,15 @@ if (TRUE) {
     }
 
 
+    df_to_named_vec <- function(df, value_col='value', name_col='name') {
+        ## convert a vector of named item into a dataframe
+        nvec <- df[[value_col]]
+        names(nvec) <- df[[name_col]]
+
+        return(nvec)
+    }
+
+
     dds.analysis <- function(mcnt, desdf, design, Geneid.vec, thres.ind.filter = 10) {
         ## DESeq2 setting
         dds <- DESeqDataSetFromMatrix(countData = mcnt,
@@ -492,6 +501,29 @@ if (TRUE) {
     ## load list of genes involved in replicative histone biogenesis
     replHistPathgr <- rtracklayer::import.gff('./Data/path_replicative_histone_synthesis.gtf')
 
+    ## Document duplicated replicative histones
+    {
+        dup.l <- list(
+            c('HIST2H4A', 'HIST2H4B'),
+            c('HIST2H3C', 'HIST2H3A'),
+            c('HIST2H2AA3', 'HIST2H2AA4')
+        )
+
+        dup.ll <- lapply(dup.l, function(xxx) {xxx[1]})
+        names(dup.ll) <- lapply(dup.l, function(xxx) {xxx[2]})
+
+        dupi.l <- lapply(dup.l, function(xxx) {
+            left_join(
+                data.frame('gene_name'=xxx),
+                as.data.frame(mcols(histgr_old))[c('gene_id', 'gene_name')],
+                by='gene_name'
+            )$gene_id
+        })
+
+        dupi.ll <- lapply(dupi.l, function(xxx) {xxx[1]})
+        names(dupi.ll) <- lapply(dupi.l, function(xxx) {xxx[2]})
+    }
+
     #### read counts in genes (only signal in exons)
     rcdir <- "./Data/ASF1_chaperone/RNA-Seq/read_counts"
     spll <- list(
@@ -545,7 +577,23 @@ if (TRUE) {
     colnames(mcnt) <- c("Geneid", names(cntl))
 
     mcnt <- tibble(mcnt)
+
+    ## combine the duplicated replicative histone genes
+    for (dgi in 1:length(dupi.l)) {
+        # dgi <- 1
+        dgp <- dupi.l[[dgi]]
+        
+        smcnt <- mcnt[mcnt$Geneid %in% dgp,]
+        # print(stab)
+
+        sel_col <- !grepl('^(Geneid)', colnames(smcnt))
+        smcnt[1, sel_col] <- smcnt[1, sel_col] + smcnt[2, sel_col]
+
+        mcnt[mcnt$Geneid %in% dgp[1], sel_col] <- smcnt[1, sel_col]
+        mcnt <- mcnt[!(mcnt$Geneid %in% dgp[2]),]
+    }
 }
+
 
 #####################################################
 #### analysis of S-phase time points, +/- Asf1
@@ -936,6 +984,13 @@ if (TRUE) {
 
 
     ## DESeq processing
+        # ???
+    # cat.dds <- estimateSizeFactors(cat.dds)
+    # cat.dds@colData@listData$sizeFactor <- cat.dds@colData@listData$sizeFactor * spi.fract.min.rel[cat.dds@colData@listData$sample]
+    # cat.dds@colData@listData$sizeFactor <- spi.seqdep.nf[cat.dds@colData@listData$sample]
+    # cat.dds <- estimateDispersions(cat.dds)
+    # cat.dds <- nbinomWaldTest(cat.dds)
+
     cat.dds <- DESeq(cat.dds)
     cat.desq.outf <- paste0(resdir_deseq, '/', 'CtrlVsSiASF1_while_AsyncVsSphase_effect_DESeq2Results.RDS')
     saveRDS(cat.dds, cat.desq.outf)
@@ -1021,6 +1076,7 @@ if (TRUE) {
             }
         )
 
+            # ???
         hm_gene_vst_expression(vst.obj = sh.cat.vsd[,3:ncol(sh.cat.vsd)], gene.sel.gff = histgr_old, spl_label_df = cat.spl_label_df, fig_base = paste0(figdir, "/histone_gene_expression_synchro_ShwetaFig"), relative.values = TRUE)
         hm_gene_vst_expression(vst.obj = sh.cat.vsd[,1:2], gene.sel.gff = histgr_old, spl_label_df = cat.spl_label_df, fig_base = paste0(figdir, "/histone_gene_expression_async_ShwetaFig"), relative.values = TRUE, width.factor = 0.45)
     }
@@ -1454,6 +1510,11 @@ if (TRUE) {
     nas.desq.outf <- paste0(resdir_deseq, '/', 'CtrlVsSiASF1_inNascentRNAs_DESeq2Results.RDS')
     saveRDS(nas.dds, nas.desq.outf)
 
+
+    ##  ## Explore histone gene expression +/- ASF1
+    if (TRUE) {
+        hm_gene_vst_expression(vst.obj = nas.vsd, gene.sel.gff = histgr, spl_label_df = nas.spl_label_df, fig_base = paste0(figdir, "/histone_gene_expression_nascent"), spl_ref = NULL, width.factor = 0.5)
+    }
 
     ##  ## for Shweta's article
     if (TRUE) {

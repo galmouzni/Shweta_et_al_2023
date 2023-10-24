@@ -3,6 +3,7 @@
     require(tidyverse)
     require(RColorBrewer)
     require(edgeR)
+    require(rtracklayer)
 
     theme_txt <- theme(text = element_text(size = 20))
     old_theme <- theme_set(theme_bw())
@@ -123,6 +124,7 @@
         
     }
 
+
     ## load list of genes
     {
         genep <- "./Data/GRCh38.104.sorted.geneOnly.gtf"
@@ -141,7 +143,42 @@
     {
         lhcp <- './Data/GtexTcgaGeneExpr/histone_chaperone_complete_list.csv'
         hctab <- read.delim(lhcp, h = T, sep = '\t', dec = ',') %>% tibble()
+
+        histgr <- rtracklayer::import.gff('./Data/histones.gff')
+        hist_name_oldnew <- tibble(read.table('./Data/histone_geneNames_OldNew.tsv'))
+        colnames(hist_name_oldnew) <- c('new', 'old')
+        histgr_old <- histgr
+        histgr_old$gene_name <- left_join(
+            data.frame('new' = histgr$gene_name),
+            hist_name_oldnew,
+            by = 'new'
+        )$old
     }
+
+
+    ## Document duplicated replicative histones
+    {
+        dup.l <- list(
+            c('HIST2H4A', 'HIST2H4B'),
+            c('HIST2H3C', 'HIST2H3A'),
+            c('HIST2H2AA3', 'HIST2H2AA4')
+        )
+
+        dup.ll <- lapply(dup.l, function(xxx) {xxx[1]})
+        names(dup.ll) <- lapply(dup.l, function(xxx) {xxx[2]})
+
+        dupi.l <- lapply(dup.l, function(xxx) {
+            left_join(
+                data.frame('gene_name'=xxx),
+                as.data.frame(mcols(histgr_old))[c('gene_id', 'gene_name')],
+                by='gene_name'
+            )$gene_id
+        })
+
+        dupi.ll <- lapply(dupi.l, function(xxx) {xxx[1]})
+        names(dupi.ll) <- lapply(dupi.l, function(xxx) {xxx[2]})
+    }
+
 
     ## load the expression table from Alberto Gatto work
     {
@@ -164,44 +201,22 @@
             # atab_gn[atab_gn$gene_name.GRCh38 == 'H3-3B' & !is.na(atab_gn$gene_name.GRCh38),]
         }
 
-        ## G1/S synchronized cells
-        if (FALSE) {
-            # mtabp <- "../../Alberto Gatto-GA/Analyses/200707_new_rnaseq_results_shweta/analysis/results/dge/sync.xlsx"
-            mtabp <- "./Data/ASF1_chaperone/Alberto_Gatto_results/results/dge/sync.tsv"
-            # file.exists(mtabp)
-            mtab <- read.delim(mtabp, h = T, sep = '\t', dec = ',') %>% tibble()
-            colnames(mtab)[1] <- "gene_id"
-
-            cnt_col <- c("control.0.0h..1.", "control.0.0h..2.", "control.2.0h..1.", "control.2.0h..2.", "control.5.0h..1.", "control.5.0h..2.", "siASF1.0.0h..1.", "siASF1.0.0h..2.", "siASF1.2.0h..1.", "siASF1.2.0h..2.", "siASF1.5.0h..1.", "siASF1.5.0h..2.")
-            stat_col <- c("X2.0h.logFC.", "X2.0h.PValue.", "X2.0h.FDR.", "X5.0h.logFC.", "X5.0h.PValue.", "X5.0h.FDR.", "siASF1.logFC.", "siASF1.PValue.", "siASF1.FDR.", "X2.0h.siASF1.logFC.", "X2.0h.siASF1.PValue.", "X2.0h.siASF1.FDR.", "X5.0h.siASF1.logFC.", "X5.0h.siASF1.PValue.", "X5.0h.siASF1.FDR.")
-
-            cltabp <- "./Data/ASF1_chaperone/Alberto_Gatto_results/results/clusters_6/gene_clusters_sync.tsv"
-            cltab <- read.delim(cltabp, h = T, sep = '\t', dec = ',') %>% tibble()
-            colnames(cltab)[1] <- "gene_id"
-        }
-
-        ## nascent RNAs
-        if (FALSE) {
-            rtabp <- "./Data/ASF1_chaperone/Alberto_Gatto_results/results/dge/nascent.tsv"
-            rtab <- read.delim(rtabp, h = T, sep = '\t', dec = ',') %>% tibble()
-            colnames(rtab)[1] <- "gene_id"
-
-            rn_cnt_col <- c("control.nascent..1.", "control.nascent..2.", "siASF1.nascent..1.", "siASF1.nascent..2.")
-            # rtab[rn_cnt_col]
-        }
-    }
-
-    ## compute some general info
-    {
-        ## gene with significant differential expression in any comparison of synchronized cells
+        ## adjust the table of read counts
         {
-            log_any_sig <- apply(mtab[stat_col[grepl('FDR', stat_col)]], 2, function(xxx) {
-                xxx < 0.05
-            })
+            ## combine the duplicated replicative histone genes
+            for (dgi in 1:length(dupi.l)) {
+                # dgi <- 1
+                dgp <- dupi.l[[dgi]]
+                
+                stab <- atab[atab$gene_id %in% dgp,]
+                # print(stab)
 
-            log_any_sig <- apply(log_any_sig, 1, any)
-            # sum(log_any_sig)
-            # 7706
+                sel_col <- !grepl('^(gene_id|PValue|FDR|name|description)', colnames(stab))
+                stab[1, sel_col] <- stab[1, sel_col] + stab[2, sel_col]
+
+                atab[atab$gene_id %in% dgp[1], sel_col] <- stab[1, sel_col]
+                atab <- atab[!(atab$gene_id %in% dgp[2]),]
+            }
         }
     }
 
@@ -212,96 +227,6 @@
             log_repl_hist <- grepl('^HIST', atab$name)
             log_vari_hist <- atab$gene_id %in% hctab$EnsemblGeneId[hctab$subClass == "replacement"]
 
-            ## check weird parts of the volcano plot (resolution to small ?)
-            if (FALSE) {
-                interc = 0.3
-                slope = 1/5
-                thresh_logfc = 5
-
-                if (FALSE) {
-                    fig <- ggplot(
-                        atab,
-                        aes(
-                            x = logFC,
-                            y = -log10(FDR)
-                        )
-                    ) +
-                        geom_point(
-                            col = '#CCCCCC'
-                        ) +
-                        geom_point(
-                            data = atab[log_repl_hist,],
-                            col = color_list$replicative,
-                            size = hh_size,
-                            alpha = hh_alpha
-                        ) +
-                        geom_point(
-                            data = atab[log_vari_hist,],
-                            col = color_list$replacement,
-                            size = hh_size,
-                            alpha = hh_alpha
-                        ) +
-                        geom_hline(yintercept = 1.3, linetype = 2) +
-                        geom_vline(xintercept = 0, linetype = 2) +
-                        geom_abline(intercept = interc, slope = slope, col = '#880000') +
-                        geom_vline(xintercept = 5, col = '#880000') +
-                        theme_txt
-
-                    print(fig)
-                }
-
-                log_cust <- (-log10(atab$FDR) < atab$logFC * slope + interc) & (atab$logFC > thresh_logfc)
-                quantile(atab[["control..1."]][log_cust], 1:9 / 10)
-                quantile(atab[["control..2."]][log_cust], 1:9 / 10)
-
-                ctrl_mean_cnt_cust <- rowMeans(atab[c("control..1.", "control..2.")][log_cust,])
-                quantile(ctrl_mean_cnt_cust, 1:9 / 10)
-
-                log_null_ctrl <- rowMeans(atab[c("control..1.", "control..2.")]) <= 0.1
-                log_non_null_ctrl <- !log_null_ctrl
-
-                log_cust <- (-log10(atab$FDR) > - atab$logFC * slope + interc) & (atab$logFC < - thresh_logfc / 2)
-                quantile(atab[["siASF1..1."]][log_cust], 1:9 / 10)
-                quantile(atab[["siASF1..2."]][log_cust], 1:9 / 10)
-
-                log_null_siasf <- rowMeans(atab[c("siASF1..1.", "siASF1..2.")]) <= 0.1
-                log_non_null_siasf <- !log_null_siasf
-
-                log_non_null <- log_non_null_ctrl & log_non_null_siasf
-
-                if (FALSE) {
-                    fig <- ggplot(
-                        atab[log_non_null,],
-                        aes(
-                            x = logFC,
-                            y = -log10(FDR)
-                        )
-                    ) +
-                        geom_point(
-                            col = '#CCCCCC'
-                        ) +
-                        geom_point(
-                            data = atab[log_repl_hist & log_non_null,],
-                            col = color_list$replicative,
-                            size = hh_size,
-                            alpha = hh_alpha
-                        ) +
-                        geom_point(
-                            data = atab[log_vari_hist & log_non_null,],
-                            col = color_list$replacement,
-                            size = hh_size,
-                            alpha = hh_alpha
-                        ) +
-                        geom_hline(yintercept = 1.3, linetype = 2) +
-                        geom_vline(xintercept = 0, linetype = 2) +
-                        geom_abline(intercept = interc, slope = slope, col = '#880000') +
-                        geom_vline(xintercept = 5, col = '#880000') +
-                        theme_txt
-
-                    print(fig)
-                }
-            }
-            
         }
 
         ## [Plot] build the plot
@@ -345,564 +270,12 @@
                 geom_vline(xintercept = 0, linetype = 2) +
                 coord_cartesian(xlim=c(-max_lfc, max_lfc)) +
                 theme_txt
-            
+        }
+
+        ## print the plot
+        {
             figname <- file.path(fig_dir, 'volcano_total.pdf')
             pdf(figname); message(figname)
-            print(fig)
-            bouh <- dev.off()
-        }
-    }
-
-    ## [Mix] make volcano plot siCtrl vs siAsf1 from asynchronized cells (total RNA-Seq) with only the genes of group2 (see clusters based on the synchronized cells)
-    if (FALSE) {
-        ## some computation
-        {
-            log_group2 <- atab$gene_id %in% cltab$gene_id[cltab$cluster == 2]
-
-            ## check weird parts of the volcano plot (resolution to small ?)
-            {
-                interc = 0.3
-                slope = 1/5
-                thresh_logfc = 5
-
-                log_cust <- -log10(atab$FDR) < atab$logFC * slope + interc & atab$logFC > thresh_logfc
-                quantile(atab[["control..1."]][log_cust], 1:9 / 10)
-                quantile(atab[["control..2."]][log_cust], 1:9 / 10)
-
-                ctrl_mean_cnt_cust <- rowMeans(atab[c("control..1.", "control..2.")][log_cust,])
-                quantile(ctrl_mean_cnt_cust, 1:9 / 10)
-
-                log_null_ctrl <- rowMeans(atab[c("control..1.", "control..2.")]) <= 0.1
-                log_non_null_ctrl <- !log_null_ctrl
-
-                log_cust <- -log10(atab$FDR) > - atab$logFC * slope + interc & atab$logFC < - thresh_logfc / 2
-                quantile(atab[["siASF1..1."]][log_cust], 1:9 / 10)
-                quantile(atab[["siASF1..2."]][log_cust], 1:9 / 10)
-
-                log_null_siasf <- rowMeans(atab[c("siASF1..1.", "siASF1..2.")]) <= 0.1
-                log_non_null_siasf <- !log_null_siasf
-
-                log_non_null <- log_non_null_ctrl & log_non_null_siasf
-            }
-        }
-
-        ## [Plot] build the plot
-        {
-            hh_size = 5
-            hh_alpha = 0.80
-
-            max_lfc <- max(atab$logFC[log_non_null])
-
-            fig <- ggplot(
-                atab[log_non_null,],
-                aes(
-                    x = logFC,
-                    y = -log10(FDR)
-                )
-            ) +
-                geom_point(
-                    col = '#CCCCCC'
-                ) +
-                geom_point(
-                    data = atab[log_group2 & log_non_null,],
-                    col = color_list$replicative,
-                    size = hh_size,
-                    alpha = hh_alpha
-                ) +
-                geom_hline(yintercept = 1.3, linetype = 2) +
-                geom_vline(xintercept = 0, linetype = 2) +
-                coord_cartesian(xlim=c(-max_lfc, max_lfc)) +
-                theme_txt
-            
-            figname <- file.path(fig_dir, 'volcano_total_group2HH.pdf')
-            pdf(figname); message(figname)
-            print(fig)
-            bouh <- dev.off()
-        }
-    }
-
-    ## [Mix] make the heatmap of expression ("z-scored") organized by clustering from synchronized cells
-    if (FALSE) {
-        ## prepare data
-        {
-            gdata <- left_join(
-                cltab[c("gene_id", "cluster", "name")],
-                mtab[c("gene_id", cnt_col)],
-                by = "gene_id"
-            )
-
-            ## center and scale the counts
-            # var_tot <- sd(unlist(gdata[cnt_col]))
-            gdata[cnt_col] <- apply(gdata[cnt_col], 1, function(xxx) {
-                (xxx - mean(xxx)) / (sd(xxx))
-            }) %>% t() %>% as.data.frame()
-
-            gdata <- gdata[order(gdata$cluster),]
-
-            { ## order each gene cluster by hierarchical clustering on euclidian distance
-                for (cii in unique(gdata$cluster)) {
-                    # cii <- 2
-                    log_cluster <- gdata$cluster == cii
-                    sgdata <- as.matrix(gdata[log_cluster, cnt_col])
-                    hcres <- hclust(as.dist(1 - cor(t(sgdata)) / 2), method='ward.D2')
-                    # plot(hcres)
-                    as.data.frame(gdata[log_cluster,])
-                    gdata[log_cluster,] <- gdata[log_cluster,][hcres$order,]
-                }
-            }
-            gdata$gene_id <- factor(gdata$gene_id, levels=unique(gdata$gene_id))
-
-            ## check the cluster "2" obtained by Alberto only contains replicative histone
-            # as.data.frame(gdata[gdata$cluster == 2,])
-
-            gdata <- pivot_longer(gdata, cols=cnt_col, names_to = "condition", values_to = "count_scl_ctr")
-            as.data.frame(gdata)[1:100,]
-            cond_levs <- c(
-                "control.0.0h..1.",
-                "control.0.0h..2.",
-                "control.2.0h..1.",
-                "control.2.0h..2.",
-                "control.5.0h..1.",
-                "control.5.0h..2.",
-                "siASF1.0.0h..1.",
-                "siASF1.0.0h..2.",
-                "siASF1.2.0h..1.",
-                "siASF1.2.0h..2.",
-                "siASF1.5.0h..1.",
-                "siASF1.5.0h..2."
-            )
-            gdata$condition <- factor(gdata$condition, levels=rev(cond_levs))
-
-            # gdata$count_scl_ctr <- (gdata$count - mean(gdata$count)) / sd(gdata$count)
-
-
-            # gdata$count_scl_ctr <- gdata$count_scl_ctr * 20
-
-            gdata$count_scl_ctr[gdata$count_scl_ctr > 2] <- 2
-            gdata$count_scl_ctr[gdata$count_scl_ctr < -2] <- -2
-            # summary(gdata$count_scl_ctr)
-
-            # gdata$xxx <- 1/0
-            # log_pos <- gdata$count_scl_ctr >= 0
-            # log_neg <- !log_pos
-            # gdata$xxx[log_pos] <- (gdata$count_scl_ctr[log_pos])^2
-            # gdata$xxx[log_neg] <- -(-gdata$count_scl_ctr[log_neg])^2
-            # # gdata$xxx <- gdata$xxx / (2^1.5)
-            # gdata$count_scl_ctr <- gdata$xxx
-
-
-            if (FALSE)
-            {
-                repart_plot(gdata$count_scl_ctr)
-
-            }
-        }
-
-        ## [Plot] build plot
-        {
-            # col_pal_ext <- brewer.pal(n=3, name="RdYlBu")
-
-            maxval <- max(abs(gdata$count_scl_ctr))
-            col_xxx <- summary(floor((gdata$count_scl_ctr + maxval) / (2 * maxval) * (length(col_pal_cust) - 1) + 1))
-            col_xxx <- col_xxx[1]:col_xxx[6]
-
-            fig <- ggplot(
-                gdata,
-                aes(
-                    x = gene_id,
-                    y = condition,
-                    fill = count_scl_ctr
-                )
-            ) +
-                geom_tile() +
-                scale_fill_gradientn(
-                    # colors = rev(paletteer_c("grDevices::RdYlBu", 30))
-                    # colors = rev(paletteer_c("ggthemes::Orange-Blue Diverging", 30))
-                    # colors = rev(paletteer_c("ggthemes::Orange-Blue-White Diverging", 30))
-                    colors = rev(col_pal_cust)[col_xxx],
-                )
-                # scale_fill_gradient2(
-                #     low = col_pal_ext[3],
-                #     mid = col_pal_ext[2],
-                #     high = col_pal_ext[1],
-                #     midpoint = 0
-                # )
-
-            figname <- file.path(fig_dir, "count_heatmap_synchronized_orderByCluster.pdf"); message(figname)
-            pdf(figname, width = 4 * 7)
-            print(fig)
-            bouh <- dev.off()
-
-            # figname <- file.path(fig_dir, "count_heatmap_synchronized_orderByCluster.png"); message(figname)
-            # png(figname, width = 2 * 480, height = 0.5 * 480)
-            # print(fig)
-            # bouh <- dev.off()
-        }
-
-    }
-
-    ## [Mix] make the heatmap of expression ("z-scored") organized by clustering from non-synchronized cells
-    if (FALSE) {
-        ## prepare data
-        {
-            gdata <- left_join(
-                cltab[c("gene_id", "cluster", "name")],
-                atab[c("gene_id", as_cnt_col)],
-                by = "gene_id"
-            )
-            gdata <- gdata[order(gdata$cluster),]
-
-            ## find NA genes
-            log_na <- apply(gdata[, as_cnt_col], 1, function(xxx) {
-                any(is.na(xxx))
-            })
-            log_nna <- !log_na
-
-            ## scale and center
-            gdata[as_cnt_col] <- apply(gdata[as_cnt_col], 1, function(xxx) {
-                (xxx - mean(xxx)) / sd(xxx)
-            }) %>% t() %>% as.data.frame()
-
-            { ## order each gene cluster by hierarchical clustering on euclidian distance
-                gdata$hcorder <- 0
-                for (cii in unique(gdata$cluster)) {
-                    log_cluster <- gdata$cluster == cii & log_nna
-                    sgdata <- as.matrix(gdata[log_cluster, as_cnt_col])
-                    hcres <- hclust(as.dist(1 - cor(t(sgdata)) / 2)) #, method='ward.D2')
-                    # plot(hcres)
-                    gdata$hcorder[log_cluster] <- hcres$order
-                    gdata[log_cluster,] <- gdata[log_cluster,][gdata$hcorder[log_cluster],]
-                }
-            }
-            gdata$gene_id <- factor(gdata$gene_id, levels=unique(gdata$gene_id))
-
-            ## check the cluster "2" obtained by Alberto only contains replicative histone
-            # as.data.frame(gdata[gdata$cluster == 2,])
-
-            gdata <- pivot_longer(gdata, cols=as_cnt_col, names_to = "condition", values_to = "count_scl_ctr")
-            cond_levs <- c(
-                "control..1.",
-                "control..2.",
-                "siASF1..1.",
-                "siASF1..2."
-            )
-            gdata$condition <- factor(gdata$condition, levels=rev(cond_levs))
-
-            # gdata$count_scl_ctr <- (gdata$count - mean(gdata$count)) / sd(gdata$count)
-
-            gdata$count_scl_ctr[gdata$count_scl_ctr > 2] <- 2
-            gdata$count_scl_ctr[gdata$count_scl_ctr < -2] <- -2
-        }
-
-        ## [Plot] build plot
-        {
-            # col_pal_ext <- brewer.pal(n=3, name="RdYlBu")
-
-            maxval <- max(abs(gdata$count_scl_ctr), na.rm=TRUE)
-            col_xxx <- summary(floor((gdata$count_scl_ctr + maxval) / (2 * maxval) * (length(col_pal_cust) - 1) + 1))
-            col_xxx <- col_xxx[1]:col_xxx[6]
-
-            fig <- ggplot(
-                gdata,
-                aes(
-                    x = gene_id,
-                    y = condition,
-                    fill = count_scl_ctr
-                )
-            ) +
-                geom_tile() +
-                scale_fill_gradientn(
-                    # colors = rev(paletteer_c("grDevices::RdYlBu", 30))
-                    # colors = rev(paletteer_c("ggthemes::Orange-Blue Diverging", 30))
-                    # colors = rev(paletteer_c("ggthemes::Orange-Blue-White Diverging", 30))
-                    colors = rev(col_pal_cust)[col_xxx],
-                )
-                # scale_fill_gradient2(
-                #     low = col_pal_ext[3],
-                #     mid = col_pal_ext[2],
-                #     high = col_pal_ext[1],
-                #     midpoint = 0
-                # )
-
-            figname <- file.path(fig_dir, "count_heatmap_nonSynchro_orderByCluster.pdf"); message(figname)
-            pdf(figname, width = 4 * 7)
-            print(fig)
-            bouh <- dev.off()
-        }
-
-    }
-
-    ## [Mix] make the heatmap of expression ("z-scored") organized by clustering from nascent RNA signal
-    if (FALSE) {
-        ## prepare data
-        {
-            gdata <- left_join(
-                cltab[c("gene_id", "cluster")],
-                rtab[c("gene_id", rn_cnt_col)],
-                by = "gene_id"
-            )
-            gdata <- gdata[order(gdata$cluster),]
-            gdata$gene_id <- factor(gdata$gene_id, levels=unique(gdata$gene_id))
-
-            gdata[rn_cnt_col] <- apply(gdata[rn_cnt_col], 1, function(xxx) {
-                (xxx - mean(xxx)) / sd(xxx)
-            }) %>% t() %>% as.data.frame()
-
-            gdata <- pivot_longer(gdata, cols=rn_cnt_col, names_to = "condition", values_to = "count_scl_ctr")
-            cond_levs <- c(
-                "control.nascent..1.",
-                "control.nascent..2.",
-                "siASF1.nascent..1.",
-                "siASF1.nascent..2."
-            )
-            gdata$condition <- factor(gdata$condition, levels=rev(cond_levs))
-
-            # gdata$count_scl_ctr <- (gdata$count - mean(gdata$count)) / sd(gdata$count)
-
-            gdata$count_scl_ctr[gdata$count_scl_ctr > 2] <- 2
-            gdata$count_scl_ctr[gdata$count_scl_ctr < -2] <- -2
-        }
-
-        ## [Plot] build plot
-        {
-            maxval <- max(abs(gdata$count_scl_ctr), na.rm=T)
-            col_xxx <- summary(floor((gdata$count_scl_ctr + maxval) / (2 * maxval) * (length(col_pal_cust) - 1) + 1))
-            col_xxx <- col_xxx[1]:col_xxx[6]
-
-            fig <- ggplot(
-                gdata,
-                aes(
-                    x = gene_id,
-                    y = condition,
-                    fill = count_scl_ctr
-                )
-            ) +
-                geom_tile() +
-                scale_fill_gradientn(
-                    # colors = rev(paletteer_c("ggthemes::Orange-Blue-White Diverging", 30))
-                    colors = rev(col_pal_cust)[col_xxx]
-                )
-
-            figname <- file.path(fig_dir, "count_heatmap_nascent_orderByCluster.pdf")
-            pdf(figname, width = 4 * 7); message(figname)
-            print(fig)
-            bouh <- dev.off()
-        }
-    }
-
-    ## [Mix] make the heatmap of expression ("z-scored") for histone genes only (replicative, DEGs or not, variants) from nascent RNA signal
-    if (FALSE) {
-        ## prepare data
-        {
-            gdata <- left_join(
-                cltab[c("gene_id", "cluster")],
-                rtab[c("gene_id", rn_cnt_col)],
-                by = "gene_id"
-            )
-            gdata <- gdata[order(gdata$cluster),]
-            gdata$gene_id <- factor(gdata$gene_id, levels=unique(gdata$gene_id))
-
-            gdata[rn_cnt_col] <- apply(gdata[rn_cnt_col], 1, function(xxx) {
-                (xxx - mean(xxx)) / sd(xxx)
-            }) %>% t() %>% as.data.frame()
-
-            gdata <- gdata[gdata$gene_id %in% hctab$EnsemblGeneId[grepl('^Histone', hctab$Class)],]
-            gdata$comment <- NA
-            gdata$comment[gdata$gene_id %in% hctab$EnsemblGeneId[hctab$subClass == "replicative"]] <- 1
-            gdata$comment[gdata$gene_id %in% hctab$EnsemblGeneId[hctab$subClass == "replacement"]] <- 3
-            gdata$comment[gdata$cluster == 2] <- 2
-            gdata <- gdata[order(gdata$comment),]
-            gdata$gene_id <- factor(gdata$gene_id, levels=unique(gdata$gene_id))
-            # gdata$name <- factor(gdata$name, levels=unique(gdata$name))
-            # as.data.frame(gdata[1:5])
-
-            gdata <- pivot_longer(gdata, cols=rn_cnt_col, names_to = "condition", values_to = "count_scl_ctr")
-            cond_levs <- c(
-                "control.nascent..1.",
-                "control.nascent..2.",
-                "siASF1.nascent..1.",
-                "siASF1.nascent..2."
-            )
-            gdata$condition <- factor(gdata$condition, levels=rev(cond_levs))
-
-            # gdata$count_scl_ctr <- (gdata$count - mean(gdata$count)) / sd(gdata$count)
-
-            gdata$count_scl_ctr[gdata$count_scl_ctr > 2] <- 2
-            gdata$count_scl_ctr[gdata$count_scl_ctr < -2] <- -2
-        }
-
-        ## [Plot] build plot
-        {
-            maxval <- max(abs(gdata$count_scl_ctr), na.rm=T)
-            col_xxx <- summary(floor((gdata$count_scl_ctr + maxval) / (2 * maxval) * (length(col_pal_cust) - 1) + 1))
-            col_xxx <- col_xxx[1]:col_xxx[6]
-
-            fig <- ggplot(
-                gdata,
-                aes(
-                    x = gene_id,
-                    y = condition,
-                    fill = count_scl_ctr
-                )
-            ) +
-                geom_tile() +
-                scale_fill_gradientn(
-                    # colors = rev(paletteer_c("ggthemes::Orange-Blue-White Diverging", 30))
-                    colors = rev(col_pal_cust)[col_xxx]
-                )
-
-            figname <- file.path(fig_dir, "count_heatmap_nascent_histonesOnly.pdf"); message(figname)
-            pdf(figname, width = 1 * 7)
-            print(fig)
-            bouh <- dev.off()
-        }
-    }
-
-    ## [Mix] make the heatmap of expression ("z-scored") for histone genes only (replicative, DEGs or not, variants) from synchronized cells
-    if (FALSE) {
-        ## prepare data
-        {
-            gdata <- left_join(
-                cltab[c("gene_id", "name", "cluster")],
-                mtab[c("gene_id", cnt_col)],
-                by = "gene_id"
-            )
-
-            gdata[cnt_col] <- apply(gdata[cnt_col], 1, function(xxx) {
-                (xxx - mean(xxx)) / sd(xxx)
-            }) %>% t() %>% as.data.frame()
-
-            gdata <- gdata[gdata$gene_id %in% hctab$EnsemblGeneId[grepl('^Histone', hctab$Class)],]
-            gdata$comment <- NA
-            gdata$comment[gdata$gene_id %in% hctab$EnsemblGeneId[hctab$subClass == "replicative"]] <- 1
-            gdata$comment[gdata$gene_id %in% hctab$EnsemblGeneId[hctab$subClass == "replacement"]] <- 3
-            gdata$comment[gdata$cluster == 2] <- 2
-            gdata <- gdata[order(gdata$comment),]
-            gdata$gene_id <- factor(gdata$gene_id, levels=unique(gdata$gene_id))
-            gdata$name <- factor(gdata$name, levels=unique(gdata$name))
-            # as.data.frame(gdata[1:5])
-
-            gdata <- pivot_longer(gdata, cols=cnt_col, names_to = "condition", values_to = "count_scl_ctr")
-            cond_levs <- c(
-                "control.0.0h..1.",
-                "control.0.0h..2.",
-                "control.2.0h..1.",
-                "control.2.0h..2.",
-                "control.5.0h..1.",
-                "control.5.0h..2.",
-                "siASF1.0.0h..1.",
-                "siASF1.0.0h..2.",
-                "siASF1.2.0h..1.",
-                "siASF1.2.0h..2.",
-                "siASF1.5.0h..1.",
-                "siASF1.5.0h..2."
-            )
-            gdata$condition <- factor(gdata$condition, levels=rev(cond_levs))
-
-            # tot_sd <- sd(gdata$count_scl_ctr)
-            # gdata$count_scl_ctr <- gdata$count_scl_ctr / tot_sd
-
-            # gdata$count_scl_ctr <- (gdata$count - mean(gdata$count)) / sd(gdata$count)
-
-            gdata$count_scl_ctr[gdata$count_scl_ctr > 2] <- 2
-            gdata$count_scl_ctr[gdata$count_scl_ctr < -2] <- -2
-        }
-
-        ## [Plot] build plot
-        {
-            maxval <- max(abs(gdata$count_scl_ctr))
-            col_xxx <- summary(floor((gdata$count_scl_ctr + maxval) / (2 * maxval) * (length(col_pal_cust) - 1) + 1))
-            col_xxx <- col_xxx[1]:col_xxx[6]
-
-            fig <- ggplot(
-                gdata,
-                aes(
-                    x = name, #gene_id,
-                    y = condition,
-                    fill = count_scl_ctr
-                )
-            ) +
-                geom_tile() +
-                scale_fill_gradientn(
-                    # colors = rev(paletteer_c("ggthemes::Orange-Blue-White Diverging", 30))
-                    colors = rev(col_pal_cust)[col_xxx],
-                    # values = c(-maxval, -maxval/2, 0, maxval/2, maxval)
-                )
-                #  +
-                # theme(axis.text.x = element_text(angle = 45, hjust=1))
-
-            figname <- file.path(fig_dir, "count_heatmap_synchronized_histonesOnly.pdf")
-            pdf(figname, width = 7 * 1); message(figname)
-            print(fig)
-            bouh <- dev.off()
-        }
-    }
-
-    ## [Mix] make the heatmap of expression ("z-scored") for histone genes only (replicative, DEGs or not, variants) from non-synchronized cells
-    if (FALSE) {
-        ## prepare data
-        {
-            gdata <- left_join(
-                cltab[c("gene_id", "name", "cluster")],
-                atab[c("gene_id", as_cnt_col)],
-                by = "gene_id"
-            )
-
-            gdata[as_cnt_col] <- apply(gdata[as_cnt_col], 1, function(xxx) {
-                (xxx - mean(xxx)) / sd(xxx)
-            }) %>% t() %>% as.data.frame()
-
-            gdata <- gdata[gdata$gene_id %in% hctab$EnsemblGeneId[grepl('^Histone', hctab$Class)],]
-            gdata$comment <- NA
-            gdata$comment[gdata$gene_id %in% hctab$EnsemblGeneId[hctab$subClass == "replicative"]] <- 1
-            gdata$comment[gdata$gene_id %in% hctab$EnsemblGeneId[hctab$subClass == "replacement"]] <- 3
-            gdata$comment[gdata$cluster == 2] <- 2
-            gdata <- gdata[order(gdata$comment),]
-            gdata$gene_id <- factor(gdata$gene_id, levels=unique(gdata$gene_id))
-            gdata$name <- factor(gdata$name, levels=unique(gdata$name))
-            # as.data.frame(gdata[1:5])
-
-            gdata <- pivot_longer(gdata, cols=as_cnt_col, names_to = "condition", values_to = "count_scl_ctr")
-            cond_levs <- c(
-                "control..1.",
-                "control..2.",
-                "siASF1..1.",
-                "siASF1..2."
-            )
-            gdata$condition <- factor(gdata$condition, levels=rev(cond_levs))
-
-            # tot_sd <- sd(gdata$count_scl_ctr)
-            # gdata$count_scl_ctr <- gdata$count_scl_ctr / tot_sd
-
-            # gdata$count_scl_ctr <- (gdata$count - mean(gdata$count)) / sd(gdata$count)
-
-            gdata$count_scl_ctr[gdata$count_scl_ctr > 2] <- 2
-            gdata$count_scl_ctr[gdata$count_scl_ctr < -2] <- -2
-        }
-
-        ## [Plot] build plot
-        {
-            col_pal_cc <- color_palette_subset_by_values(col_pal_cust, gdata$count_scl_ctr, min_ext=-2, max_ext=2)
-
-            fig <- ggplot(
-                gdata,
-                aes(
-                    x = name, #gene_id,
-                    y = condition,
-                    fill = count_scl_ctr
-                )
-            ) +
-                geom_tile() +
-                scale_fill_gradientn(
-                    # colors = rev(paletteer_c("ggthemes::Orange-Blue-White Diverging", 30))
-                    colors = rev(col_pal_cc),
-                    # values = c(-maxval, -maxval/2, 0, maxval/2, maxval)
-                )
-                #  +
-                # theme(axis.text.x = element_text(angle = 45, hjust=1))
-
-            figname <- file.path(fig_dir, "count_heatmap_nonSynchro_histonesOnly.pdf")
-            pdf(figname, width = 7 * 1); message(figname)
             print(fig)
             bouh <- dev.off()
         }

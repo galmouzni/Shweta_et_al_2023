@@ -6,7 +6,8 @@
 # A00514:356:HMHFVDRXX:1:1101:1136:25692  147     11      123059760       60      98M3S   =       123059615       -243    GTGCTGGAAGAGAGGGTACGCTTAGCACGTTCACAAGCAGTACGGAGGCGTCTTACAGCTCTCTTGTTCTCACTGATGTCCTTCTTATGCTTGCGCTTCGC    FFFFFFFFFFFFFFFFFFFF,FFFFFFFF,FFFFFFFFFFFF:FFFFFFF:FFFFFFFF:FFFF:FFFF:FFFFFFFFFF:FFFFFF,FFFFFFFFFFFFF    AS:i:-3 XN:i:0  XM:i:0  XO:i:0  XG:i:0  NM:i:0  MD:Z:98 YS:i:-4  YT:Z:CP NH:i:1  MQ:i:60 MC:Z:4S97M
 
 ## Example of use for this script
-# samtools view D356T5.nsorted.bam | python3 ./Scripts/ASF1_chaperone/replHist_polyA_analysis.py annotations.gff
+# samtools view /Volumes/Seb_GA/replHist_polyA_temp/D356T5.nsorted.bam | head -n 1000 | python3 ./Scripts/ASF1_chaperone/replHist_polyA_analysis_230622.py ./Data/ASF1_chaperone/annotations/replicative_histone_genes.gff | less -S
+
 
 import sys
 import re
@@ -246,8 +247,14 @@ for reada in fich:
     #
     if in_annot:
         ## filter for pairs with read 1 containing stretch of Ts on 5' end
-        if re.search('(^T{8})', fieldsa[9]):
-            print(reada, end='')
+        if bool(re.search('(^T{22})', fieldsa[9])) and bool(re.search('(^[0-9]*S|\*)', fieldsa[5])):
+            ann = in_annot
+            gene_id = ann.attrs['gene_id']
+            reada_mod = '%s GI:%s\n' % (reada.strip(), gene_id)
+            #
+            # print(reada, end='')
             # print(readb, end='')
+            print(reada_mod, end='')
+            # print('\t'.join([ann.ref, str(ann.start), str(ann.end), ann.strand] + [attr + ':' + ann.attrs[attr] for attr in ann.attrs]))
 
 ####
