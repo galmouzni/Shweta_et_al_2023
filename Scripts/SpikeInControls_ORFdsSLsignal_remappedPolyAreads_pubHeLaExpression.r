@@ -5,7 +5,7 @@
     SAVE_DATA_LOG <- FALSE
     
     ## Shoul we print the plots
-    PRINT_PLOTS <- TRUE
+    PRINT_PLOTS <- FALSE
 }
 
 
@@ -1819,7 +1819,7 @@ if (TRUE)
 
     ## Balance CDS vs SL-downstream region
     {
-        ## recover data for scatter plot
+        ## recover normalized read counts for various plots
         {
             ## get data for SL-downstream region
             gdata <- dssl.rcdata[grepl('^(D356T|Geneid)', colnames(dssl.rcdata))]
@@ -1863,6 +1863,358 @@ if (TRUE)
                 desdf,
                 by='sample'
             )$exp_comb
+        }
+
+        ## save counts in dsSL and CDS regions
+        {
+            outdf <- gdata
+            outdf$gene_name <- left_join(
+                as.data.frame(outdf %>% mutate(gene_id=Geneid)),
+                as.data.frame(mcols(gene.gff)[c('gene_id', 'gene_name')]),
+                by = 'gene_id'
+            )$gene_name
+
+            outdf$ratio_dsSL_over_CDS <- outdf$count_dsSL / outdf$count_CDS
+            
+            outdf <- outdf[c("Geneid", "gene_name", "sample", "condition", "exp_comb", "count_dsSL", "count_CDS", "ratio_dsSL_over_CDS")]
+            save_data_f(outdf, resdir, 'countsAndRatio_dsSL_over_CDS', table = TRUE)
+
+        }
+
+
+        ## some heatmap plots specific to Total RNA-seq signal
+        {
+            ## build heatmap for raw signal in 4sU-RNA-seq
+            {
+                sgdata <- gdata[gdata$sample %in% desdf$sample[desdf$experiment == 'total'],]
+                sgdata <- pivot_longer(sgdata, cols=c("count_dsSL", "count_CDS"), names_to = 'region', values_to = 'signal')
+                sgdata$hm_col <- paste0(sgdata$region, '_', sgdata$condition, '_', sgdata$sample)
+                sgdata$hm_col <- factor(sgdata$hm_col, levels=c("count_CDS_siCtrl_D356T13", "count_CDS_siCtrl_D356T14", "count_CDS_siAsf1_D356T15", "count_CDS_siAsf1_D356T16", "count_dsSL_siCtrl_D356T13", "count_dsSL_siCtrl_D356T14", "count_dsSL_siAsf1_D356T15", "count_dsSL_siAsf1_D356T16"))
+
+                fig <- ggplot(
+                    sgdata,
+                    aes(
+                        x = hm_col,
+                        y = Geneid,
+                        fill = log10(signal)
+                    )
+                ) +
+                    geom_tile() +
+                    scale_fill_viridis_c() +
+                    theme_txt_xangle
+            }
+
+
+            ## print heatmap plot
+            if (PRINT_PLOTS)
+            {
+                figname <- file.path(figdir, 'replicative_histone_CDS_vs_SLdownstream_readCounts_total_hm.pdf'); message(figname)
+                pdf(figname, width = 7)
+                print(fig)
+                bouh <- dev.off()
+            }
+
+
+            ## build heatmap for siCtrl_CDS-normalized signal in 4sU-RNA-seq
+            {
+                custfc <- function(sgdata) {
+                    rsgdata = sgdata[c("Geneid", "hm_col", "signal")]
+
+                    ## reshape with a column per 'region'
+                    tmat <- pivot_wider(
+                        sgdata[c("Geneid", "hm_col", "signal")],
+                        names_from = 'hm_col',
+                        values_from = 'signal'
+                    )
+                    
+                    ## normalize the counts by those of CDS in siCtrl condition
+                    {
+                        tmat$count_CDS_siAsf1_D356T15 <- tmat$count_CDS_siAsf1_D356T15 / tmat$count_CDS_siCtrl_D356T13
+                        tmat$count_dsSL_siCtrl_D356T13 <- tmat$count_dsSL_siCtrl_D356T13 / tmat$count_CDS_siCtrl_D356T13
+                        tmat$count_dsSL_siAsf1_D356T15 <- tmat$count_dsSL_siAsf1_D356T15 / tmat$count_CDS_siCtrl_D356T13
+
+                        tmat$count_CDS_siAsf1_D356T16 <- tmat$count_CDS_siAsf1_D356T16 / tmat$count_CDS_siCtrl_D356T14
+                        tmat$count_dsSL_siCtrl_D356T14 <- tmat$count_dsSL_siCtrl_D356T14 / tmat$count_CDS_siCtrl_D356T14
+                        tmat$count_dsSL_siAsf1_D356T16 <- tmat$count_dsSL_siAsf1_D356T16 / tmat$count_CDS_siCtrl_D356T14
+
+                        tmat$count_CDS_siCtrl_D356T13 <- tmat$count_CDS_siCtrl_D356T13 / tmat$count_CDS_siCtrl_D356T13
+                        tmat$count_CDS_siCtrl_D356T14 <- tmat$count_CDS_siCtrl_D356T14 / tmat$count_CDS_siCtrl_D356T14
+                    }
+
+                    ## get the row indexes in the original table
+                    {
+                        imat <- pivot_wider(
+                            sgdata[c("Geneid", "hm_col")] %>% add_column(idx=1:nrow(sgdata)),
+                            names_from = 'hm_col',
+                            values_from = 'idx'
+                        )
+                        imat <- as.vector(as.matrix(imat[2:ncol(imat)]))
+                    }
+
+                    ## replace the values
+                    {
+                        rsgdata$signal[imat] <- as.vector(as.matrix(tmat[2:ncol(tmat)]))
+                    }
+
+                    return(rsgdata)
+                }
+                rsgdata <- custfc(sgdata)
+
+                fig <- ggplot(
+                    rsgdata,
+                    aes(
+                        x = hm_col,
+                        y = Geneid,
+                        fill = log10(signal)
+                    )
+                ) +
+                    geom_tile() +
+                    scale_fill_gradient2(low='blue', high='red') +
+                    theme_txt_xangle
+            }
+
+
+            ## print heatmap plot
+            if (PRINT_PLOTS)
+            {
+                figname <- file.path(figdir, 'replicative_histone_CDS_vs_SLdownstream_readCounts_normBySiCtrlCDS_total_hm.pdf'); message(figname)
+                pdf(figname, width = 7)
+                print(fig)
+                bouh <- dev.off()
+            }
+
+
+            ## build heatmap for siCtrl-normalized signal in 4sU-RNA-seq, CDS and 3' of SL separately
+            {
+                custfc <- function(sgdata) {
+                    rsgdata = sgdata[c("Geneid", "hm_col", "signal")]
+
+                    ## reshape with a column per 'region'
+                    tmat <- pivot_wider(
+                        sgdata[c("Geneid", "hm_col", "signal")],
+                        names_from = 'hm_col',
+                        values_from = 'signal'
+                    )
+                    
+                    ## normalize the counts by those of CDS in siCtrl condition
+                    {
+                        tmat$count_CDS_siAsf1_D356T15 <- tmat$count_CDS_siAsf1_D356T15 / tmat$count_CDS_siCtrl_D356T13
+                        tmat$count_dsSL_siAsf1_D356T15 <- tmat$count_dsSL_siAsf1_D356T15 / tmat$count_dsSL_siCtrl_D356T13
+
+                        tmat$count_CDS_siAsf1_D356T16 <- tmat$count_CDS_siAsf1_D356T16 / tmat$count_CDS_siCtrl_D356T14
+                        tmat$count_dsSL_siAsf1_D356T16 <- tmat$count_dsSL_siAsf1_D356T16 / tmat$count_dsSL_siCtrl_D356T14
+                    }
+
+                    ## get the row indexes in the original table
+                    {
+                        imat <- pivot_wider(
+                            sgdata[c("Geneid", "hm_col")] %>% add_column(idx=1:nrow(sgdata)),
+                            names_from = 'hm_col',
+                            values_from = 'idx'
+                        )
+                        imat <- as.vector(as.matrix(imat[2:ncol(imat)]))
+                    }
+
+                    ## replace the values
+                    {
+                        rsgdata$signal[imat] <- as.vector(as.matrix(tmat[2:ncol(tmat)]))
+                    }
+
+                    return(rsgdata)
+                }
+                rsgdata <- custfc(sgdata)
+                rsgdata <- rsgdata[rsgdata$hm_col %in% c("count_CDS_siAsf1_D356T15", "count_dsSL_siAsf1_D356T15", "count_CDS_siAsf1_D356T16", "count_dsSL_siAsf1_D356T16"),]
+
+                fig <- ggplot(
+                    rsgdata,
+                    aes(
+                        x = hm_col,
+                        y = Geneid,
+                        fill = log10(signal)
+                    )
+                ) +
+                    geom_tile() +
+                    scale_fill_gradient2(low='blue', high='red') +
+                    theme_txt_xangle
+            }
+
+
+            ## print heatmap plot
+            if (PRINT_PLOTS)
+            {
+                figname <- file.path(figdir, 'replicative_histone_CDS_vs_SLdownstream_readCounts_normBySiCtrl_CDSandDsSL_total_hm.pdf'); message(figname)
+                pdf(figname, width = 7)
+                print(fig)
+                bouh <- dev.off()
+            }
+        }
+
+
+        ## some heatmap plots specific 4sU-RNA-seq signal
+        {
+            ## build heatmap for raw signal in 4sU-RNA-seq
+            {
+                sgdata <- gdata[gdata$sample %in% desdf$sample[desdf$experiment == 'nascent'],]
+                sgdata <- pivot_longer(sgdata, cols=c("count_dsSL", "count_CDS"), names_to = 'region', values_to = 'signal')
+                sgdata$hm_col <- paste0(sgdata$region, '_', sgdata$condition, '_', sgdata$sample)
+                sgdata$hm_col <- factor(sgdata$hm_col, levels=c("count_CDS_siCtrl_D356T17", "count_CDS_siCtrl_D356T19", "count_CDS_siAsf1_D356T18", "count_CDS_siAsf1_D356T20", "count_dsSL_siCtrl_D356T17", "count_dsSL_siCtrl_D356T19", "count_dsSL_siAsf1_D356T18", "count_dsSL_siAsf1_D356T20"))
+
+                fig <- ggplot(
+                    sgdata,
+                    aes(
+                        x = hm_col,
+                        y = Geneid,
+                        fill = log10(signal)
+                    )
+                ) +
+                    geom_tile() +
+                    scale_fill_viridis_c() +
+                    theme_txt_xangle
+            }
+
+
+            ## print heatmap plot
+            if (PRINT_PLOTS)
+            {
+                figname <- file.path(figdir, 'replicative_histone_CDS_vs_SLdownstream_readCounts_nascent_hm.pdf'); message(figname)
+                pdf(figname, width = 7)
+                print(fig)
+                bouh <- dev.off()
+            }
+
+
+            ## build heatmap for siCtrl_CDS-normalized signal in 4sU-RNA-seq
+            {
+                custfc <- function(sgdata) {
+                    rsgdata = sgdata[c("Geneid", "hm_col", "signal")]
+
+                    ## reshape with a column per 'region'
+                    tmat <- pivot_wider(
+                        sgdata[c("Geneid", "hm_col", "signal")],
+                        names_from = 'hm_col',
+                        values_from = 'signal'
+                    )
+                    
+                    ## normalize the counts by those of CDS in siCtrl condition
+                    {
+                        tmat$count_CDS_siAsf1_D356T18 <- tmat$count_CDS_siAsf1_D356T18 / tmat$count_CDS_siCtrl_D356T17
+                        tmat$count_dsSL_siCtrl_D356T17 <- tmat$count_dsSL_siCtrl_D356T17 / tmat$count_CDS_siCtrl_D356T17
+                        tmat$count_dsSL_siAsf1_D356T18 <- tmat$count_dsSL_siAsf1_D356T18 / tmat$count_CDS_siCtrl_D356T17
+
+                        tmat$count_CDS_siAsf1_D356T20 <- tmat$count_CDS_siAsf1_D356T20 / tmat$count_CDS_siCtrl_D356T19
+                        tmat$count_dsSL_siCtrl_D356T19 <- tmat$count_dsSL_siCtrl_D356T19 / tmat$count_CDS_siCtrl_D356T19
+                        tmat$count_dsSL_siAsf1_D356T20 <- tmat$count_dsSL_siAsf1_D356T20 / tmat$count_CDS_siCtrl_D356T19
+
+                        tmat$count_CDS_siCtrl_D356T17 <- tmat$count_CDS_siCtrl_D356T17 / tmat$count_CDS_siCtrl_D356T17
+                        tmat$count_CDS_siCtrl_D356T19 <- tmat$count_CDS_siCtrl_D356T19 / tmat$count_CDS_siCtrl_D356T19
+                    }
+
+                    ## get the row indexes in the original table
+                    {
+                        imat <- pivot_wider(
+                            sgdata[c("Geneid", "hm_col")] %>% add_column(idx=1:nrow(sgdata)),
+                            names_from = 'hm_col',
+                            values_from = 'idx'
+                        )
+                        imat <- as.vector(as.matrix(imat[2:ncol(imat)]))
+                    }
+
+                    ## replace the values
+                    {
+                        rsgdata$signal[imat] <- as.vector(as.matrix(tmat[2:ncol(tmat)]))
+                    }
+
+                    return(rsgdata)
+                }
+                rsgdata <- custfc(sgdata)
+
+                fig <- ggplot(
+                    rsgdata,
+                    aes(
+                        x = hm_col,
+                        y = Geneid,
+                        fill = log10(signal)
+                    )
+                ) +
+                    geom_tile() +
+                    scale_fill_gradient2(low='blue', high='red') +
+                    theme_txt_xangle
+            }
+
+
+            ## print heatmap plot
+            if (PRINT_PLOTS)
+            {
+                figname <- file.path(figdir, 'replicative_histone_CDS_vs_SLdownstream_readCounts_normBySiCtrlCDS_nascent_hm.pdf'); message(figname)
+                pdf(figname, width = 7)
+                print(fig)
+                bouh <- dev.off()
+            }
+
+
+            ## build heatmap for siCtrl-normalized signal in 4sU-RNA-seq, CDS and 3' of SL separately
+            {
+                custfc <- function(sgdata) {
+                    rsgdata = sgdata[c("Geneid", "hm_col", "signal")]
+
+                    ## reshape with a column per 'region'
+                    tmat <- pivot_wider(
+                        sgdata[c("Geneid", "hm_col", "signal")],
+                        names_from = 'hm_col',
+                        values_from = 'signal'
+                    )
+                    
+                    ## normalize the counts by those of CDS in siCtrl condition
+                    {
+                        tmat$count_CDS_siAsf1_D356T18 <- tmat$count_CDS_siAsf1_D356T18 / tmat$count_CDS_siCtrl_D356T17
+                        tmat$count_dsSL_siAsf1_D356T18 <- tmat$count_dsSL_siAsf1_D356T18 / tmat$count_dsSL_siCtrl_D356T17
+
+                        tmat$count_CDS_siAsf1_D356T20 <- tmat$count_CDS_siAsf1_D356T20 / tmat$count_CDS_siCtrl_D356T19
+                        tmat$count_dsSL_siAsf1_D356T20 <- tmat$count_dsSL_siAsf1_D356T20 / tmat$count_dsSL_siCtrl_D356T19
+                    }
+
+                    ## get the row indexes in the original table
+                    {
+                        imat <- pivot_wider(
+                            sgdata[c("Geneid", "hm_col")] %>% add_column(idx=1:nrow(sgdata)),
+                            names_from = 'hm_col',
+                            values_from = 'idx'
+                        )
+                        imat <- as.vector(as.matrix(imat[2:ncol(imat)]))
+                    }
+
+                    ## replace the values
+                    {
+                        rsgdata$signal[imat] <- as.vector(as.matrix(tmat[2:ncol(tmat)]))
+                    }
+
+                    return(rsgdata)
+                }
+                rsgdata <- custfc(sgdata)
+                rsgdata <- rsgdata[rsgdata$hm_col %in% c("count_CDS_siAsf1_D356T18", "count_dsSL_siAsf1_D356T18", "count_CDS_siAsf1_D356T20", "count_dsSL_siAsf1_D356T20"),]
+
+                fig <- ggplot(
+                    rsgdata,
+                    aes(
+                        x = hm_col,
+                        y = Geneid,
+                        fill = log10(signal)
+                    )
+                ) +
+                    geom_tile() +
+                    scale_fill_gradient2(low='blue', high='red') +
+                    theme_txt_xangle
+            }
+
+
+            ## print heatmap plot
+            if (PRINT_PLOTS)
+            {
+                figname <- file.path(figdir, 'replicative_histone_CDS_vs_SLdownstream_readCounts_normBySiCtrl_CDSandDsSL_nascent_hm.pdf'); message(figname)
+                pdf(figname, width = 7)
+                print(fig)
+                bouh <- dev.off()
+            }
         }
 
 
