@@ -1,6 +1,8 @@
 # Shweta_et_al_2023
 Regulation of replicative histone RNA metabolism by the histone chaperone ASF1  
 
+This Repository is under license GNU-PLv3.
+
 <br/><br/>
 
 Scripts must be executed from the root of the repository folder.
